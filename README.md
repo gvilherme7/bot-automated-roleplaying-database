@@ -21,6 +21,7 @@ Built to integrate with [Firecast](https://firecast.app/) VTT via a custom Lua p
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Go 1.22+](https://go.dev/)
 - [Ollama](https://ollama.com/)
+- [Firecast](https://firecast.app/) + [SDK 3 (RDK 3.7b)](https://firecast.app/downloads/RDK3.7b.exe) — for the plugin
 
 ### 1. Pull Ollama models
 
@@ -63,7 +64,17 @@ go run ./cmd/bot
 
 The API will listen on `http://localhost:8080`.
 
-### 5. Sync lore from Firecast
+### 5. Build and install the Firecast plugin
+
+```bash
+cd firecast-plugin
+rdk p    # prepare the project (downloads SDK files into sdk/)
+rdk i    # compile and install into Firecast
+```
+
+If Firecast is running, the plugin hot-reloads automatically. See [docs/architecture.md](docs/architecture.md#building-and-installing-the-plugin) for full details on `rdk` commands and distribution.
+
+### 6. Sync lore from Firecast
 
 In your Firecast chat, run `/lore_sync` to index your campaign documents. Then ask questions with `/lore <query>`.
 
