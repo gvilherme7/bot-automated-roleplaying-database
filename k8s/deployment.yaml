@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-bot
+  labels:
+    app: rag-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-bot
+  template:
+    metadata:
+      labels:
+        app: rag-bot
+    spec:
+      containers:
+      - name: rag-bot
+        image: rag-bot:latest
+        imagePullPolicy: Never
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rag-bot-secrets
+              key: DATABASE_URL
+        - name: PLUGIN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-bot-secrets
+              key: PLUGIN_API_KEY
+        - name: OLLAMA_URL
+          value: "http://ollama:11434"
+        - name: LLM_MODEL
+          value: "llama3.1"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"

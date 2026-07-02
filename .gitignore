@@ -1,0 +1,22 @@
+.env
+.env.*
+!.env.example
+
+# Build outputs and generated packages
+*.exe
+*.rpk
+*.zip
+firecast-plugin/output/
+
+# Large local exports / campaign data
+Biblioteca.html
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local Codex agent metadata
+.agents/
+.codex/

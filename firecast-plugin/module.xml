@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module sdkVersion="3.7b">
+    <id>com.ragbot.librarian</id>
+    <version>1.0</version>
+    
+    
+    
+    <info lang="pt-BR">
+        <!--Informações do plugin na língua "pt-BR". Você pode ter várias tags "info", uma para cada tradução que quiser.-->
+        <name>Librarian (RAG Lore)</name>
+        <description>Connects to the RAG Bot backend to answer campaign lore questions.</description>
+        <author>Antigravity</author>
+        <site>http://www.seu.site.com.br</site>
+        <contact>Facebook? Twitter? E-Mail?</contact>
+    </info>
+</module>
