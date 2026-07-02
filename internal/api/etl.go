@@ -106,7 +106,7 @@ func (s *APIServer) processETLJob(job ETLJob) {
 		log.Printf("ETL: Ingesting new document '%s'...", job.Title)
 	}
 
-	processedText := job.Content
+	processedText := sanitizeFirecastText(job.Content)
 
 	// Transform phase
 	if job.Type == "Character Sheet" {

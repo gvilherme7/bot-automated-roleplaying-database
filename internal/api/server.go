@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
 	"rag-bot/internal/repository"
 )
 
@@ -104,16 +105,37 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	docs, err := s.repo.SearchSimilar(ctx, embedding, 30)
+	docs, err := s.repo.SearchSimilar(ctx, embedding, 50)
 	if err != nil {
 		log.Printf("Failed to search database: %v", err)
 		http.Error(w, "Database Error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Deduplicate by path: keep at most 2 chunks per document path,
+	// cap total at 10 diverse chunks for the LLM context.
+	const maxChunks = 10
+	const maxPerPath = 2
+	pathCount := make(map[string]int)
+	var selected []repository.Document
+
+	for _, doc := range docs {
+		if len(selected) >= maxChunks {
+			break
+		}
+		var meta map[string]string
+		json.Unmarshal(doc.Metadata, &meta)
+		path := meta["path"]
+		if cnt := pathCount[path]; cnt >= maxPerPath {
+			continue
+		}
+		pathCount[path]++
+		selected = append(selected, doc)
+	}
+
 	var contextBuilder strings.Builder
-	log.Printf("--- Retrieved Chunks for Query: '%s' ---", query)
-	for i, doc := range docs {
+	log.Printf("--- Retrieved %d chunks (from %d candidates) for Query: '%s' ---", len(selected), len(docs), query)
+	for i, doc := range selected {
 		preview := doc.Content
 		if len(preview) > 150 {
 			preview = preview[:150]
@@ -121,7 +143,8 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 		preview = strings.ReplaceAll(preview, "\n", " ")
 		log.Printf("Chunk %d: %s...", i+1, preview)
 
-		contextBuilder.WriteString(doc.Content)
+		cleaned := stripMetadataForLLM(doc.Content)
+		contextBuilder.WriteString(cleaned)
 		contextBuilder.WriteString("\n\n")
 	}
 	log.Printf("-----------------------------------------")
@@ -264,7 +287,8 @@ func (s *APIServer) handleAddLore(w http.ResponseWriter, r *http.Request) {
 	// and drop the HTTP connection before Ollama finishes generating the embedding.
 	// We want the ingestion to complete regardless of the client disconnecting.
 	ctx := context.Background()
-	
+
+	body = sanitizeFirecastText(body)
 	chunks := chunkString(body, 4000)
 	
 	log.Printf("Ingesting '%s': %d chunks to process...", logTitle, len(chunks))

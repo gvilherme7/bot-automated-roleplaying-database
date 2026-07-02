@@ -310,6 +310,14 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 						end
 						text = text:gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", '"'):gsub("&amp;", "&")
 						text = text:gsub("<[^>]+>", " ")
+						-- Strip Firecast formatting: color codes, font declarations, encoding headers
+						text = text:gsub("%$[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]?[0-9A-Fa-f]?", "")
+						text = text:gsub("[Rr]oboto%s+txt", "")
+						text = text:gsub("[Aa]rial%s+txt", "")
+						text = text:gsub("[Vv]erdana%s+txt", "")
+						text = text:gsub("1%.0%s+UTF%-8", "")
+						text = text:gsub("%d%d/%d%d/%d%d%d%d%s*%-%s*%d%d:%d%d%s*—%s*%S+%s+por%s+%S+", "")
+						text = text:gsub("  +", " ")
 					else
 						text = extractAllText(node, 0)
 					end
