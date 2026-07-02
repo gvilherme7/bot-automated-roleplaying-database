@@ -74,9 +74,9 @@ rdk i    # compile and install into Firecast
 
 If Firecast is running, the plugin hot-reloads automatically. See [docs/architecture.md](docs/architecture.md#building-and-installing-the-plugin) for full details on `rdk` commands and distribution.
 
-### 6. Sync lore from Firecast
+### 6. Configure and sync
 
-In your Firecast chat, run `/lore_sync` to index your campaign documents. Then ask questions with `/lore <query>`.
+In your Firecast chat, run `/lore_config` to open the plugin's settings window and set the backend address, your access token, and (optionally) B.A.R.D.'s avatar. Then run `/lore_sync` to index your campaign documents, and ask questions with `/lore <query>`.
 
 ## Recommended Hardware
 

@@ -3,12 +3,31 @@ require("internet.lua");
 require("ndb.lua");
 require("utils.lua");
 
+local DEFAULT_BASE_URL = "http://localhost:8080"
+local DEFAULT_API_KEY = "change_me"
+local DEFAULT_AVATAR = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRT49DdfYUXJRo6hPNkbqyVu4nclY4psP34UQ&s"
+
+-- Local-only persistent store (never synced to the table/room), same
+-- mechanism used by other plugins (e.g. AfkBot's `NDB.load("afkData.xml")`)
+-- to keep the auth token off any data that gets shared with other players.
+local config = NDB.load("bardConfig.xml")
+
 local function getAPIKey()
-    return "change_me"
+    return config.apiKey or DEFAULT_API_KEY
 end
 
-local function getBackendURL()
-    return "http://localhost:8080/api/lore"
+local function getBaseURL()
+    return config.baseURL or DEFAULT_BASE_URL
+end
+
+local function getAvatarURL()
+    return config.avatarURL or DEFAULT_AVATAR
+end
+
+local function openConfigWindow()
+    local cfgForm = GUI.newForm("frmBardConfig")
+    cfgForm:setNodeObject(config)
+    cfgForm:show()
 end
 
 local function sanitizeQuery(query)
@@ -27,7 +46,7 @@ local function sendChat(message, text)
                 impersonation = {
                     mode = "character",
                     name = "B.A.R.D",
-                    avatar = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRT49DdfYUXJRo6hPNkbqyVu4nclY4psP34UQ&s"
+                    avatar = getAvatarURL()
                 }
             })
         end)
@@ -57,7 +76,8 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
         end
 
         local apiKey = getAPIKey()
-        local url = getBackendURL()
+        local baseURL = getBaseURL()
+        local url = baseURL .. "/api/lore"
 
         -- Echo the question as the user so everyone sees what is being asked
         if message and message.chat then
@@ -68,7 +88,7 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
         local jsonPayload = '{"query": "' .. safeQueryForJson .. '"}'
 
         -- 1) Send concurrent Acknowledgment Request
-        local ackUrl = url:gsub("/lore$", "/acknowledge")
+        local ackUrl = baseURL .. "/api/acknowledge"
         local ackRequest = Internet.newHTTPRequest("POST", ackUrl)
         ackRequest:setRequestHeader("Authorization", "Bearer " .. apiKey)
         ackRequest:setRequestHeader("Content-Type", "application/json; charset=utf-8")
@@ -163,6 +183,11 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 
         message.response = { handled = true }
         return true
+	elseif message.comando == "lore_config" then
+		openConfigWindow()
+
+		message.response = { handled = true }
+		return true
 	elseif message.comando == "lore_add" then
 		local rawQuery = message.parametro or ""
 		local query = sanitizeQuery(rawQuery)
@@ -174,7 +199,7 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 		end
 
 		local apiKey = getAPIKey()
-		local url = "http://localhost:8080/api/documents"
+		local url = getBaseURL() .. "/api/documents"
 
 		sendChat(message, "Adding lore to archives...")
 
@@ -215,7 +240,6 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 		end
 
 		local apiKey = getAPIKey()
-		local url = "http://localhost:8080/api/documents"
 
 		local function extractAllText(n, depth)
 			if depth > 10 then return "" end
@@ -323,7 +347,7 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 					end
 
 					if string.len(text) > 50 then
-						local request = Internet.newHTTPRequest("POST", "http://localhost:8080/api/etl/ingest")
+						local request = Internet.newHTTPRequest("POST", getBaseURL() .. "/api/etl/ingest")
 						request:setRequestHeader("Authorization", "Bearer " .. apiKey)
 						request:setRequestHeader("Content-Type", "application/json; charset=utf-8")
 						
@@ -396,4 +420,13 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 		message.response = { handled = true }
 		return true
     end
+end)
+
+Firecast.Messaging.listen("ListChatCommands", function(message)
+    message.response = {
+        { comando = "/lore <pergunta>", descricao = "Pergunta algo ao B.A.R.D. sobre a campanha." },
+        { comando = "/lore_add <texto>", descricao = "Adiciona um texto livre aos arquivos do B.A.R.D." },
+        { comando = "/lore_sync", descricao = "Sincroniza a biblioteca da mesa com o backend do B.A.R.D." },
+        { comando = "/lore_config", descricao = "Abre a janela de configuração do B.A.R.D. (backend, token e avatar)." },
+    }
 end)

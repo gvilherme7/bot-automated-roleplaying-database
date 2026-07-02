@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<popupForm name="frmBardConfig" formType="undefined" dataType="bard.config" title="B.A.R.D. - Configuração" width="380" height="320" resizable="false">
+	<layout align="client" padding="{left=12, right=12, top=12, bottom=12}">
+		<layout align="top" height="26">
+			<label text="Endereço do backend:" align="left" width="150" wordWrap="false" horzTextAlign="trailing" margins="{right=8}"/>
+			<edit field="baseURL" align="client" hint="http://localhost:8080"/>
+		</layout>
+
+		<layout align="top" height="26" margins="{top=10}">
+			<label text="Token de acesso:" align="left" width="150" wordWrap="false" horzTextAlign="trailing" margins="{right=8}"/>
+			<edit field="apiKey" align="client"/>
+		</layout>
+
+		<layout align="top" height="120" margins="{top=10}">
+			<label text="Avatar do B.A.R.D.:" align="left" width="150" wordWrap="false" horzTextAlign="trailing" margins="{right=8}"/>
+			<rectangle align="client" color="null" strokeColor="white" strokeSize="1" xradius="5" yradius="5">
+				<image align="client" field="avatarURL" style="autoFit" editable="true"/>
+			</rectangle>
+		</layout>
+
+		<label align="top" height="16" margins="{top=10}" wordWrap="false" fontSize="10"
+			text="Clique na imagem para escolher o avatar."/>
+		<label align="top" height="16" margins="{top=2}" wordWrap="false" fontSize="10"
+			text="O endereço e o token são fornecidos pelo administrador do backend."/>
+
+		<layout align="bottom" height="30" margins="{top=10}">
+			<button text="Fechar" align="right" width="80" onClick="self:close()"/>
+		</layout>
+	</layout>
+</popupForm>

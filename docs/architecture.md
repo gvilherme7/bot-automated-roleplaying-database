@@ -64,15 +64,20 @@ Jobs are queued (buffered channel, capacity 100) and processed by a single backg
 
 ## Firecast Plugin
 
-The plugin (`firecast-plugin/main.lua`) provides three chat commands:
+The plugin (`firecast-plugin/main.lua`) provides four chat commands:
 
 | Command | Description |
 |---------|-------------|
 | `/lore <question>` | Sends concurrent acknowledge + RAG requests, displays both responses in chat |
 | `/lore_add <text>` | Ingests free text into the database via `/api/documents` |
 | `/lore_sync` | Recursively walks the Firecast room library (character sheets, notes, session logs), extracts text via NDB XML export, and sends each item to `/api/etl/ingest` |
+| `/lore_config` | Opens a settings window (`bardConfigPopup.lfm`) to set the backend address, auth token, and B.A.R.D.'s chat avatar |
 
 The plugin impersonates a character named "B.A.R.D" in chat responses. Messages are consumed so slash commands don't appear to other users.
+
+### Configuration storage
+
+Backend URL, token, and avatar are stored locally per install via `NDB.load("bardConfig.xml")` — the same local (non-synced) persistence pattern used by other Firecast plugins for per-user settings (e.g. AfkBot's `afkData.xml`). This keeps the token out of any data structure shared with other players at the table, unlike a `tablesDock` panel (e.g. Combat Tracker), whose bound fields are synced to everyone in the room.
 
 The SDK files (`firecast-plugin/sdk/`) are a third-party dependency and are not tracked in git.
 
@@ -133,10 +138,11 @@ The `.rpk` file can be deleted after installation.
 
 ```
 firecast-plugin/
-├── module.xml          # Plugin manifest (id, version, metadata)
-├── main.lua            # Entry point — chat command handlers, HTTP calls, NDB sync
-├── sdk/                # Firecast SDK 3 (auto-populated by `rdk p`, not tracked in git)
-└── output/             # Build output (not tracked in git)
+├── module.xml            # Plugin manifest (id, version, metadata)
+├── main.lua              # Entry point — chat command handlers, HTTP calls, NDB sync
+├── bardConfigPopup.lfm   # Settings window (backend URL, token, avatar)
+├── sdk/                  # Firecast SDK 3 (auto-populated by `rdk p`, not tracked in git)
+└── output/               # Build output (not tracked in git)
     └── firecast-plugin.rpk
 ```
 
