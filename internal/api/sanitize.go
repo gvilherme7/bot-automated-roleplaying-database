@@ -16,6 +16,12 @@ var (
 	reTimestamp = regexp.MustCompile(`\d{2}/\d{2}/\d{4}\s*-\s*\d{2}:\d{2}\s*—\s*\S+\s+por\s+\S+`)
 	// Bullet markers
 	reBullet = regexp.MustCompile(`(?m)^\s*●\s*`)
+	// Recurring boilerplate: session schedule block ("Grupo 1 - Sessões às Quintas...")
+	reScheduleBlock = regexp.MustCompile(`(?i)Grupo\s+\d+\s*-\s*Sess[oõ]es\s+às\s+\w+[^\n]*`)
+	// Recurring boilerplate: waitlist paragraph
+	reWaitlistBlock = regexp.MustCompile(`(?i)(?:Lista de Espera|candidat[ao]r[- ]se|disponibilidade completa|pedir uma ficha para o Mestre)[^\n]*`)
+	// Discord invite links
+	reDiscordLink = regexp.MustCompile(`https?://discord\.gg/\S+`)
 	// Collapse multiple whitespace
 	reMultiSpace = regexp.MustCompile(`[ \t]{2,}`)
 	// Collapse 3+ newlines into 2
@@ -31,6 +37,9 @@ func sanitizeFirecastText(text string) string {
 	text = reEncoding.ReplaceAllString(text, "")
 	text = reTimestamp.ReplaceAllString(text, "")
 	text = reBullet.ReplaceAllString(text, "")
+	text = reScheduleBlock.ReplaceAllString(text, "")
+	text = reWaitlistBlock.ReplaceAllString(text, "")
+	text = reDiscordLink.ReplaceAllString(text, "")
 	text = reMultiSpace.ReplaceAllString(text, " ")
 	text = reMultiNewline.ReplaceAllString(text, "\n\n")
 	text = strings.TrimSpace(text)

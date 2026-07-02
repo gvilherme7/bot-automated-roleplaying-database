@@ -70,6 +70,7 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
         -- 1) Send concurrent Acknowledgment Request
         local ackUrl = url:gsub("/lore$", "/acknowledge")
         local ackRequest = Internet.newHTTPRequest("POST", ackUrl)
+        ackRequest.timeout = 10000
         ackRequest:setRequestHeader("Authorization", "Bearer " .. apiKey)
         ackRequest:setRequestHeader("Content-Type", "application/json; charset=utf-8")
         ackRequest.onResponse = function()
@@ -104,6 +105,7 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 
         -- 2) Send the actual Lore Search Request
         local request = Internet.newHTTPRequest("POST", url)
+        request.timeout = 90000
         request:setRequestHeader("Authorization", "Bearer " .. apiKey)
         request:setRequestHeader("Content-Type", "application/json; charset=utf-8")
 
@@ -324,19 +326,20 @@ Firecast.Messaging.listen("HandleChatCommand", function(message)
 
 					if string.len(text) > 50 then
 						local request = Internet.newHTTPRequest("POST", "http://localhost:8080/api/etl/ingest")
+						request.timeout = 5000
 						request:setRequestHeader("Authorization", "Bearer " .. apiKey)
 						request:setRequestHeader("Content-Type", "application/json; charset=utf-8")
-						
+
 						local safeContent = text:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", ""):gsub("\t", " ")
 						local safeTitle = titleStr:gsub('"', '\\"')
 						local safePath = itemPath:gsub('"', '\\"')
-						
+
 						local jsonPayload = '{"path": "' .. safePath .. '", "type": "' .. itemType .. '", "title": "' .. safeTitle .. '", "content": "' .. safeContent .. '"}'
-						
+
 						request.onResponse = function()
 							setTimeout(processNext, 50)
 						end
-						
+
 						request.onError = function(errorMsg)
 							setTimeout(processNext, 50)
 						end
