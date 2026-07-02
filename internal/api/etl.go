@@ -80,7 +80,10 @@ func (s *APIServer) etlWorker() {
 
 func (s *APIServer) processETLJob(job ETLJob) {
 	ctx := context.Background()
-	
+
+	// Sanitize invalid bytes before hashing so dedup is stable
+	job.Content = strings.ToValidUTF8(job.Content, "")
+
 	// Hash the content
 	hasher := md5.New()
 	hasher.Write([]byte(job.Content))
