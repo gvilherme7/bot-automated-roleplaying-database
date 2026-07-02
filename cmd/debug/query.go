@@ -6,19 +6,25 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"rag-bot/internal/config"
 	"rag-bot/internal/llm"
 	"rag-bot/internal/repository"
 )
 
 func main() {
-	pool, err := pgxpool.New(context.Background(), "postgres://postgres:mysecretpassword@localhost:5432/postgres?sslmode=disable")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pool.Close()
 
 	repo := repository.NewDocumentRepository(pool)
-	client := llm.NewOllamaClient("http://127.0.0.1:11434", "llama3.1")
+	client := llm.NewOllamaClient(cfg.OllamaURL, cfg.LLMModel)
 
 	query := "qual a raça do daelirn"
 	emb, err := client.GenerateEmbedding(context.Background(), query)

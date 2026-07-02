@@ -8,8 +8,14 @@
 *.zip
 firecast-plugin/output/
 
+# Vendored Firecast SDK (keep on disk, not in repo)
+firecast-plugin/sdk/
+
 # Large local exports / campaign data
 Biblioteca.html
+
+# Kubernetes secrets (use secrets.yaml.example as template)
+k8s/secrets.yaml
 
 # OS/editor noise
 .DS_Store
