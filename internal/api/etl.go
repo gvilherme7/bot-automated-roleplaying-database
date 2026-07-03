@@ -112,19 +112,28 @@ func (s *APIServer) processETLJob(job ETLJob) {
 	processedText := sanitizeFirecastText(job.Content)
 
 	// Transform phase
+	var chunks []string
 	if job.Type == "Character Sheet" {
 		log.Printf("ETL: Cleaning Character Sheet '%s' with LLM...", job.Title)
-		sysPrompt := "You are a data extraction assistant. Take the messy character sheet provided by the user and clean it up. PRESERVE ALL factual information including race, class, stats, background, spells (feitiços), inventory, feats, and traits. Rewrite it into clear, factual, and structured text IN BRAZILIAN PORTUGUESE (PT-BR). Do not add any conversational text. Output all the clean facts in Portuguese."
+		sysPrompt := "You are a data extraction assistant. Take the messy character sheet provided by the user and clean it up. " +
+			"PRESERVE ALL factual information including race, class, stats, background, spells (feitiços), inventory, feats, and traits. " +
+			"Structure the output using the following Portuguese section headers on their own lines, including only sections that have data:\n" +
+			"## Identidade\n## Atributos\n## Feitiços\n## Inventário\n## Traços e Feitos\n## História\n\n" +
+			"Rewrite everything in clear, factual Brazilian Portuguese. Do not add conversational text."
 		cleanText, err := s.chatClient.GenerateRAGResponse(ctx, sysPrompt, job.Content)
 		if err == nil && cleanText != "" {
 			processedText = cleanText
 		} else {
 			log.Printf("ETL: LLM cleaning failed for '%s', using raw text. Error: %v", job.Title, err)
 		}
+		// Split by section headers so each section gets its own embedding
+		chunks = chunkBySection(processedText, job.Title)
+		if len(chunks) == 0 {
+			chunks = semanticChunk(processedText, 1000, 200)
+		}
+	} else {
+		chunks = semanticChunk(processedText, 1000, 200)
 	}
-
-	// Semantic Chunking
-	chunks := semanticChunk(processedText, 1000, 200)
 	
 	metadataPrefix := fmt.Sprintf("[Path: %s]\n[Type: %s]\nTitle: %s\n", job.Path, job.Type, job.Title)
 	
@@ -157,6 +166,41 @@ func (s *APIServer) processETLJob(job ETLJob) {
 	}
 	
 	log.Printf("ETL: Successfully loaded '%s' into %d chunks.", job.Title, len(chunks))
+}
+
+// chunkBySection splits a character sheet by markdown ## headers, prepending the
+// character name to each section so retrieval works per-topic (spells, stats, etc.)
+func chunkBySection(text string, title string) []string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	var chunks []string
+	var currentSection strings.Builder
+	var currentHeader string
+
+	flush := func() {
+		body := strings.TrimSpace(currentSection.String())
+		if body == "" {
+			return
+		}
+		header := currentHeader
+		if header == "" {
+			header = "Geral"
+		}
+		chunk := fmt.Sprintf("Personagem: %s\nSeção: %s\n%s", title, header, body)
+		chunks = append(chunks, chunk)
+		currentSection.Reset()
+	}
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			flush()
+			currentHeader = strings.TrimPrefix(line, "## ")
+		} else {
+			currentSection.WriteString(line)
+			currentSection.WriteByte('\n')
+		}
+	}
+	flush()
+	return chunks
 }
 
 // semanticChunk splits text by newlines and periods, up to maxLen, with overlap

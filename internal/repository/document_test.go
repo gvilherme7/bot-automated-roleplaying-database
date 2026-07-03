@@ -78,7 +78,7 @@ func TestSearchSimilar(t *testing.T) {
 	db := &mockDB{rows: &mockRows{rows: mockData}}
 	repo := NewDocumentRepository(db)
 
-	docs, err := repo.SearchSimilar(context.Background(), []float32{0.1, 0.2}, 1)
+	docs, err := repo.SearchSimilar(context.Background(), []float32{0.1, 0.2}, 1, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestSearchSimilarQueryError(t *testing.T) {
 	db := &mockDB{err: errors.New("query error")}
 	repo := NewDocumentRepository(db)
 
-	_, err := repo.SearchSimilar(context.Background(), []float32{0.1}, 1)
+	_, err := repo.SearchSimilar(context.Background(), []float32{0.1}, 1, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -107,7 +107,7 @@ func TestSearchSimilarScanError(t *testing.T) {
 	db := &mockDB{rows: &mockRows{rows: mockData}}
 	repo := NewDocumentRepository(db)
 
-	_, err := repo.SearchSimilar(context.Background(), []float32{0.1}, 1)
+	_, err := repo.SearchSimilar(context.Background(), []float32{0.1}, 1, "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

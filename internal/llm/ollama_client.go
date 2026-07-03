@@ -114,6 +114,48 @@ func (c *OllamaClient) GenerateRAGResponse(ctx context.Context, contextText stri
 	return resPayload.Message.Content, nil
 }
 
+// GenerateHypotheticalAnswer produces a short hypothetical answer for HyDE retrieval.
+// The result is used as the embedding input instead of the raw question, improving
+// recall for questions whose wording differs from how facts are phrased in stored docs.
+func (c *OllamaClient) GenerateHypotheticalAnswer(ctx context.Context, question string) (string, error) {
+	sysMsg := OllamaMessage{
+		Role:    "system",
+		Content: "You are a concise assistant. Given the question, write a single factual sentence in Brazilian Portuguese (PT-BR) that directly answers it, as if you had access to campaign records. Use concrete, specific language. Maximum 40 words. If you don't know, make a reasonable guess — the goal is embedding similarity, not accuracy.",
+	}
+	usrMsg := OllamaMessage{
+		Role:    "user",
+		Content: question,
+	}
+	payload := OllamaChatRequest{
+		Model:    c.model,
+		Messages: []OllamaMessage{sysMsg, usrMsg},
+		Stream:   false,
+		Options: map[string]any{
+			"temperature": 0.0,
+			"num_ctx":     512,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var res OllamaChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", err
+	}
+	return res.Message.Content, nil
+}
+
 // Implement EmbeddingClient Interface
 func (c *OllamaClient) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
 	payload := OllamaEmbedRequest{

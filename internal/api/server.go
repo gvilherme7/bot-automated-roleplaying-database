@@ -11,7 +11,8 @@ import (
 )
 
 type DocumentRepository interface {
-	SearchSimilar(ctx context.Context, embedding []float32, limit int) ([]repository.Document, error)
+	SearchSimilar(ctx context.Context, embedding []float32, limit int, pathFilter string) ([]repository.Document, error)
+	SearchFTS(ctx context.Context, query string, limit int, pathFilter string) ([]repository.Document, error)
 	CreateDocument(ctx context.Context, doc *repository.Document) error
 	DeleteDocumentsByPath(ctx context.Context, path string) error
 	GetDocumentHashByPath(ctx context.Context, path string) (string, error)
@@ -19,6 +20,7 @@ type DocumentRepository interface {
 
 type ChatClient interface {
 	GenerateRAGResponse(ctx context.Context, contextText string, question string) (string, error)
+	GenerateHypotheticalAnswer(ctx context.Context, question string) (string, error)
 }
 
 type EmbeddingClient interface {
@@ -94,39 +96,101 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	
+
+	// Detect path scope from query (e.g. "grupo 3", "arco 2")
+	pathFilter := extractPathFilter(query)
+
 	s.embedSem <- struct{}{}
 	embedding, err := s.embedClient.GenerateEmbedding(ctx, query)
 	<-s.embedSem
-	
+
 	if err != nil {
 		log.Printf("Failed to generate embedding: %v", err)
 		http.Error(w, "LLM Error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
-	docs, err := s.repo.SearchSimilar(ctx, embedding, 50)
-	if err != nil {
-		log.Printf("Failed to search database: %v", err)
-		http.Error(w, "Database Error: "+err.Error(), http.StatusInternalServerError)
+
+	// Run vector search (query embedding), HyDE vector search, and FTS in parallel
+	type searchResult struct {
+		docs []repository.Document
+		err  error
+	}
+	vecCh := make(chan searchResult, 1)
+	hydeCh := make(chan searchResult, 1)
+	ftsCh := make(chan searchResult, 1)
+
+	go func() {
+		docs, err := s.repo.SearchSimilar(ctx, embedding, 30, pathFilter)
+		vecCh <- searchResult{docs, err}
+	}()
+	go func() {
+		// HyDE: generate hypothetical answer, embed it, search with that embedding
+		hypo, err := s.chatClient.GenerateHypotheticalAnswer(ctx, query)
+		if err != nil || hypo == "" {
+			hydeCh <- searchResult{}
+			return
+		}
+		s.embedSem <- struct{}{}
+		hypoEmb, err := s.embedClient.GenerateEmbedding(ctx, hypo)
+		<-s.embedSem
+		if err != nil {
+			hydeCh <- searchResult{}
+			return
+		}
+		docs, err := s.repo.SearchSimilar(ctx, hypoEmb, 20, pathFilter)
+		hydeCh <- searchResult{docs, err}
+	}()
+	go func() {
+		docs, err := s.repo.SearchFTS(ctx, query, 20, pathFilter)
+		ftsCh <- searchResult{docs, err}
+	}()
+
+	vecRes := <-vecCh
+	hydeRes := <-hydeCh
+	ftsRes := <-ftsCh
+
+	if vecRes.err != nil {
+		log.Printf("Failed to search database: %v", vecRes.err)
+		http.Error(w, "Database Error: "+vecRes.err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Deduplicate by path: keep at most 2 chunks per document path,
-	// cap total at 10 diverse chunks for the LLM context.
+	// Merge: vector → HyDE extras → FTS extras (priority order)
+	seen := make(map[int64]bool)
+	var merged []repository.Document
+	for _, doc := range vecRes.docs {
+		if !seen[doc.ID] {
+			seen[doc.ID] = true
+			merged = append(merged, doc)
+		}
+	}
+	for _, doc := range hydeRes.docs {
+		if !seen[doc.ID] {
+			seen[doc.ID] = true
+			merged = append(merged, doc)
+		}
+	}
+	for _, doc := range ftsRes.docs {
+		if !seen[doc.ID] {
+			seen[doc.ID] = true
+			merged = append(merged, doc)
+		}
+	}
+
+	// Deduplicate by path: max 2 chunks per source document, cap at 10 total
 	const maxChunks = 10
 	const maxPerPath = 2
 	pathCount := make(map[string]int)
 	var selected []repository.Document
 
-	for _, doc := range docs {
+	for _, doc := range merged {
 		if len(selected) >= maxChunks {
 			break
 		}
 		var meta map[string]string
 		json.Unmarshal(doc.Metadata, &meta)
 		path := meta["path"]
-		if cnt := pathCount[path]; cnt >= maxPerPath {
+		if pathCount[path] >= maxPerPath {
 			continue
 		}
 		pathCount[path]++
@@ -134,7 +198,8 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var contextBuilder strings.Builder
-	log.Printf("--- Retrieved %d chunks (from %d candidates) for Query: '%s' ---", len(selected), len(docs), query)
+	log.Printf("--- Retrieved %d chunks (vec:%d hyde:%d fts:%d) for Query: '%s' [filter:%q] ---",
+		len(selected), len(vecRes.docs), len(hydeRes.docs), len(ftsRes.docs), query, pathFilter)
 	for i, doc := range selected {
 		preview := doc.Content
 		if len(preview) > 150 {

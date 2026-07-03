@@ -11,11 +11,11 @@ Go API Server (:8080)
     │
     ├──► Ollama (local)
     │      ├─ nomic-embed-text  (embeddings, 768-dim)
-    │      └─ llama3.1:8b       (chat completion)
+    │      └─ qwen2.5:14b       (chat completion)
     │
     └──► PostgreSQL + pgvector
            └─ campaign_documents table
-              (content, embedding VECTOR(768), metadata JSONB)
+              (content, embedding VECTOR(768), metadata JSONB, tsv tsvector)
 ```
 
 ## API Endpoints
@@ -33,11 +33,15 @@ All endpoints require `Authorization: Bearer <PLUGIN_API_KEY>` and accept `POST`
 
 ### Query flow (`/api/lore`)
 
-1. Embed the user's question with `nomic-embed-text`
-2. Search `campaign_documents` for the 30 nearest chunks by cosine distance (`<->` operator)
-3. Concatenate matched chunks into a context string
-4. Send context + question to `llama3.1` with a strict system prompt
-5. Return the answer as JSON
+Three retrieval strategies run in parallel and are merged before selection:
+
+1. **Vector search** — embed the user's question with `nomic-embed-text`, find the 30 nearest chunks by cosine distance
+2. **HyDE (Hypothetical Document Embeddings)** — ask the LLM to generate a short hypothetical answer (PT-BR, max 40 words, temp 0.0), embed that, find the 20 nearest chunks. This improves recall when the question wording differs from how facts are stored.
+3. **Full-text search (FTS)** — run a `to_tsquery('portuguese', ...)` query against the `tsv` tsvector column, ranked by `ts_rank`. Returns up to 20 results. This is particularly effective for proper nouns (character names, place names) that don't embed well.
+
+Results are merged in priority order (vector → HyDE → FTS), deduplicated by ID, then filtered to at most 2 chunks per source path, capping at 10 total diverse chunks for the LLM context.
+
+If the query contains an explicit group or arc reference (`"grupo 3"`, `"arco 2"`), all three searches are scoped to documents whose `metadata->>'path'` matches that string, preventing irrelevant groups from flooding the context.
 
 ### Anti-hallucination prompt design
 
@@ -45,8 +49,7 @@ The system prompt enforces:
 - Respond only in Brazilian Portuguese (PT-BR)
 - Use **only** facts explicitly stated in the retrieved context
 - Never infer, deduce, or extrapolate
-- Character Sheets override Session Logs on conflicting facts
-- Maximum 150 words / 3 short paragraphs
+- Maximum 120 words / 2 short paragraphs
 - If the answer isn't in the context, reply with a fixed fallback message
 - Temperature is set to `0.1` for near-deterministic output
 
@@ -54,11 +57,16 @@ The system prompt enforces:
 
 ### Ingestion flow (`/api/etl/ingest`)
 
-1. **Deduplicate**: MD5-hash the content, compare against the stored hash for the same path. Skip if unchanged.
-2. **Transform**: For `Character Sheet` type documents, pass the raw text through the LLM to clean and structure it in PT-BR before embedding.
-3. **Chunk**: Split text at paragraph and sentence boundaries with 1000-char max chunk size and 200-char overlap.
-4. **Embed**: Generate `nomic-embed-text` embeddings for each chunk (metadata prefix prepended).
-5. **Store**: Insert into `campaign_documents` with JSONB metadata containing `path` and `hash`.
+1. **Sanitize**: Strip invalid UTF-8 bytes (`strings.ToValidUTF8`), then remove Firecast formatting artifacts: color codes (`$FFAABBCC`), font declarations (`Roboto txt`), encoding headers, session schedule boilerplate, waitlist paragraphs, and Discord links.
+2. **Deduplicate**: MD5-hash the sanitized content, compare against the stored hash for the same path. Skip if unchanged; delete old chunks if changed.
+3. **Transform**:
+   - *Character Sheets*: pass through the LLM to clean and restructure into labeled PT-BR sections (`## Identidade`, `## Atributos`, `## Feitiços`, `## Inventário`, `## Traços e Feitos`, `## História`).
+   - *Session Logs and other types*: no LLM transform.
+4. **Chunk**:
+   - *Character Sheets*: split by `##` section headers so each section gets its own embedding. Each chunk is prefixed with `Personagem: <name>\nSeção: <section>` for targeted retrieval.
+   - *All other types*: semantic chunking at paragraph/sentence boundaries (1000-char max, 200-char overlap).
+5. **Embed**: Generate `nomic-embed-text` embeddings for each chunk (metadata prefix prepended).
+6. **Store**: Insert into `campaign_documents` with JSONB metadata containing `path` and `hash`. The `tsv` column is populated automatically via a generated column.
 
 Jobs are queued (buffered channel, capacity 100) and processed by a single background worker. Concurrent Ollama requests are capped at 4 via semaphore.
 
@@ -71,6 +79,11 @@ The plugin (`firecast-plugin/main.lua`) provides three chat commands:
 | `/lore <question>` | Sends concurrent acknowledge + RAG requests, displays both responses in chat |
 | `/lore_add <text>` | Ingests free text into the database via `/api/documents` |
 | `/lore_sync` | Recursively walks the Firecast room library (character sheets, notes, session logs), extracts text via NDB XML export, and sends each item to `/api/etl/ingest` |
+
+All HTTP requests include timeouts to prevent Firecast from hanging when the backend is unreachable:
+- ETL ingest: 5s (fast-fail, queue continues)
+- `/lore` query: 90s (allows LLM generation time)
+- `/lore` acknowledge: 10s
 
 The plugin impersonates a character named "B.A.R.D" in chat responses. Messages are consumed so slash commands don't appear to other users.
 
@@ -103,31 +116,17 @@ The full SDK documentation is available at https://firecast.app/sdk3/RRPG%20SDK%
    rdk p
    ```
 
-   This creates/updates `module.xml` and populates the `sdk/` folder.
-
 2. **Compile the plugin**:
 
    ```bash
    rdk c
    ```
 
-   The compiled package is written to `firecast-plugin/output/firecast-plugin.rpk`. Compilation will fail if any `.lua` file has syntax errors or `module.xml` is misconfigured.
-
 3. **Install into Firecast**:
 
    ```bash
    rdk i
    ```
-
-   This compiles and installs in one step. If there are validation errors, the installation is aborted.
-
-#### Distributing the plugin
-
-Share the `.rpk` file from the `output/` folder. Recipients install it by either:
-- Double-clicking the `.rpk` file (Firecast must be installed)
-- Opening Firecast's plugin menu, clicking "Install", and selecting the `.rpk` file
-
-The `.rpk` file can be deleted after installation.
 
 #### Plugin project structure
 
@@ -149,12 +148,17 @@ CREATE TABLE campaign_documents (
     id        BIGSERIAL PRIMARY KEY,
     content   TEXT NOT NULL,
     embedding VECTOR(768),
-    metadata  JSONB NOT NULL DEFAULT '{}'
+    metadata  JSONB NOT NULL DEFAULT '{}',
+    tsv       tsvector GENERATED ALWAYS AS (to_tsvector('portuguese', content)) STORED
 );
 
 -- HNSW index for fast approximate nearest neighbor search
 CREATE INDEX campaign_documents_embedding_idx
 ON campaign_documents USING hnsw (embedding vector_cosine_ops);
+
+-- GIN index for full-text search
+CREATE INDEX campaign_documents_tsv_idx
+ON campaign_documents USING GIN(tsv);
 ```
 
 ## Deployment
@@ -162,6 +166,18 @@ ON campaign_documents USING hnsw (embedding vector_cosine_ops);
 ### Local development
 
 The standard setup (see README) uses Docker for PostgreSQL and runs the Go server directly.
+
+```bash
+# Start PostgreSQL
+docker run -d --name rag-db -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 ankane/pgvector
+
+# Apply migrations
+docker exec rag-db psql -U postgres -f db/migrations/001_init_pgvector.sql
+docker exec rag-db psql -U postgres -f db/migrations/002_add_fts.sql
+
+# Start Go server
+go run ./cmd/bot
+```
 
 ### Kubernetes
 

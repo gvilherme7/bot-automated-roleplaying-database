@@ -3,6 +3,7 @@ package api
 import (
 	"regexp"
 	"strings"
+	"fmt"
 )
 
 var (
@@ -44,6 +45,22 @@ func sanitizeFirecastText(text string) string {
 	text = reMultiNewline.ReplaceAllString(text, "\n\n")
 	text = strings.TrimSpace(text)
 	return text
+}
+
+var reGroupMention = regexp.MustCompile(`(?i)\bgrupo\s+(\d+)\b`)
+var reArcMention = regexp.MustCompile(`(?i)\barco\s+(\d+)\b`)
+
+// extractPathFilter scans the query for explicit group or arc references and
+// returns a path substring to use as a WHERE ILIKE filter, narrowing retrieval
+// to the relevant section of the library. Returns "" if no signal found.
+func extractPathFilter(query string) string {
+	if m := reGroupMention.FindStringSubmatch(query); m != nil {
+		return fmt.Sprintf("Grupo %s", m[1])
+	}
+	if m := reArcMention.FindStringSubmatch(query); m != nil {
+		return fmt.Sprintf("Arco %s", m[1])
+	}
+	return ""
 }
 
 func stripMetadataForLLM(content string) string {

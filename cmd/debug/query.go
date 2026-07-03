@@ -26,13 +26,13 @@ func main() {
 	repo := repository.NewDocumentRepository(pool)
 	client := llm.NewOllamaClient(cfg.OllamaURL, cfg.LLMModel)
 
-	query := "qual a raça do daelirn"
+	query := "quem são os personagens do grupo 3"
 	emb, err := client.GenerateEmbedding(context.Background(), query)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	docs, err := repo.SearchSimilar(context.Background(), emb, 3)
+	docs, err := repo.SearchSimilar(context.Background(), emb, 10, "")
 	if err != nil {
 		log.Fatal(err)
 	}
