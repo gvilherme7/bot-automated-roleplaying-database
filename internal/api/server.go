@@ -97,8 +97,8 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Detect path scope from query (e.g. "grupo 3", "arco 2")
-	pathFilter := extractPathFilter(query)
+	// Detect path scope from query (e.g. "grupo 3", "ficha", "arco 2")
+	pathFilter, isSheetQuery := extractPathFilter(query)
 
 	s.embedSem <- struct{}{}
 	embedding, err := s.embedClient.GenerateEmbedding(ctx, query)
@@ -177,9 +177,13 @@ func (s *APIServer) handleLore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Deduplicate by path: max 2 chunks per source document, cap at 10 total
+	// Deduplicate by path: cap at 10 total. Allow more chunks per path for
+	// character sheet queries since each section is a separate chunk.
 	const maxChunks = 10
-	const maxPerPath = 2
+	maxPerPath := 2
+	if isSheetQuery {
+		maxPerPath = 4
+	}
 	pathCount := make(map[string]int)
 	var selected []repository.Document
 

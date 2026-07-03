@@ -49,18 +49,27 @@ func sanitizeFirecastText(text string) string {
 
 var reGroupMention = regexp.MustCompile(`(?i)\bgrupo\s+(\d+)\b`)
 var reArcMention = regexp.MustCompile(`(?i)\barco\s+(\d+)\b`)
+var reFichaMention = regexp.MustCompile(`(?i)\b(ficha|personagem|character\s+sheet)\b`)
 
-// extractPathFilter scans the query for explicit group or arc references and
-// returns a path substring to use as a WHERE ILIKE filter, narrowing retrieval
-// to the relevant section of the library. Returns "" if no signal found.
-func extractPathFilter(query string) string {
+// extractPathFilter scans the query for explicit group, arc, or character-sheet
+// references and returns a path substring for WHERE ILIKE filtering.
+// Returns ("", false) when no signal is found.
+// The bool indicates whether the query is explicitly targeting character sheets
+// (used by callers to widen per-path chunk limits).
+func extractPathFilter(query string) (path string, isSheetQuery bool) {
 	if m := reGroupMention.FindStringSubmatch(query); m != nil {
-		return fmt.Sprintf("Grupo %s", m[1])
+		// Group mention: scope to that group's folder; detect sheet intent separately
+		isSheetQuery = reFichaMention.MatchString(query)
+		return fmt.Sprintf("Grupo %s", m[1]), isSheetQuery
 	}
 	if m := reArcMention.FindStringSubmatch(query); m != nil {
-		return fmt.Sprintf("Arco %s", m[1])
+		return fmt.Sprintf("Arco %s", m[1]), false
 	}
-	return ""
+	if reFichaMention.MatchString(query) {
+		// "ficha" without a specific group → scope to the fichas folder
+		return "3 - Fichas", true
+	}
+	return "", false
 }
 
 func stripMetadataForLLM(content string) string {

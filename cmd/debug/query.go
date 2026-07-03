@@ -26,7 +26,7 @@ func main() {
 	repo := repository.NewDocumentRepository(pool)
 	client := llm.NewOllamaClient(cfg.OllamaURL, cfg.LLMModel)
 
-	query := "quem são os personagens do grupo 3"
+	query := "quem é mairon"
 	emb, err := client.GenerateEmbedding(context.Background(), query)
 	if err != nil {
 		log.Fatal(err)
